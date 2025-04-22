@@ -1,0 +1,77 @@
+import psycopg2
+import csv
+
+# 🔗 Connection
+connection = psycopg2.connect(
+    database="postgres",
+    user="postgres",
+    password="Kazakhstan2025",
+    host="localhost",
+    port="5432"
+)
+cursor = connection.cursor()
+
+cursor.execute("SELECT * FROM phone")
+records = cursor.fetchall()
+for row in records:
+    print(row)
+
+def insert():
+    print("Which method would you like to use? csv or console")
+    method = input("Type: ")
+    if method == "csv":
+        with open("phonebook.csv", newline='') as csvfile:
+            reader = csv.reader(csvfile)
+            next(reader)  # Skip header
+
+            for row in reader:
+                name, number = row
+                cursor.execute("INSERT INTO phone (name, number) VALUES (%s, %s)", (name, number))
+                connection.commit()
+    else:
+        name = input("Name: ")
+        number = input("Number: ")
+        cursor.execute("INSERT INTO phone(name, number) VALUES(%s, %s)", (name, number))
+        connection.commit()
+
+def update():
+    print("What would you like to update: name or number?")
+    field = input("Field (name/number): ").strip().lower()
+
+    if field not in ("name", "number"):
+        print("Invalid field.")
+        return
+
+    new_value = input(f"New {field}: ")
+    print("Search by which field? name or number?")
+    search_field = input("Search field (name/number): ").strip().lower()
+    old_value = input(f"Old {search_field}: ")
+
+    cursor.execute(f"UPDATE phone SET {field} = %s WHERE {search_field} = %s", (new_value, old_value))
+    connection.commit()
+    print("Update successful.")
+
+def select():
+    field = input("name/number: ")
+    value = input(f"Enter {field}: ")
+    query = f"SELECT * FROM phone WHERE {field} = %s"
+    cursor.execute(query, (value,))
+    results = cursor.fetchall()
+    for record in results:
+        print(record)
+    connection.commit()
+
+def delete():
+    field = input("name/number: ")
+    value = input(f"Enter {field}: ")
+    cursor.execute(f"DELETE FROM phone WHERE {field} = %s", (value,))
+    connection.commit()
+
+cursor.execute("SELECT setval('phone_id_seq', (SELECT MAX(id) FROM phone))")
+connection.commit()
+
+delete()
+
+cursor.close()
+connection.close()
+
