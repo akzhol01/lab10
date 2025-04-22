@@ -1,0 +1,134 @@
+import psycopg2
+import pygame
+import random
+import sys
+
+conn = psycopg2.connect(
+    dbname="postgres", user="postgres", password="Kazakhstan2025", host="localhost"
+)
+cur = conn.cursor()
+
+player_name = input("Enter your username: ")
+cur.execute("SELECT id FROM users WHERE username = %s", (player_name,))
+player = cur.fetchone()
+
+if not player:
+    cur.execute("INSERT INTO users (username) VALUES (%s) RETURNING id", (player_name,))
+    player_id = cur.fetchone()[0]
+    current_level = 1
+else:
+    player_id = player[0]
+    cur.execute("SELECT level FROM user_score WHERE user_id = %s ORDER BY id DESC LIMIT 1", (player_id,))
+    result = cur.fetchone()
+    current_level = result[0] if result else 1
+
+print(f"Welcome {player_name}, your current level is {current_level}")
+
+pygame.init()
+WIDTH, HEIGHT = 600, 400
+win = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Snake Game with PostgreSQL")
+clock = pygame.time.Clock()
+
+snake_block = 10
+game_speed = 10 + current_level * 5
+font = pygame.font.SysFont("Arial", 24)
+
+def draw_snake(snake_body):
+    for block in snake_body:
+        pygame.draw.rect(win, (0, 255, 0), (*block, snake_block, snake_block))
+
+def message(msg, color):
+    text = font.render(msg, True, color)
+    win.blit(text, [WIDTH / 6, HEIGHT / 3])
+
+def save_score(player_id, current_level, current_score):
+    cur.execute("SELECT id FROM user_score WHERE user_id=%s ORDER BY id DESC LIMIT 1", (player_id,))
+    res = cur.fetchone()
+    if res:
+        cur.execute("UPDATE user_score SET level=%s, score=%s WHERE id=%s", (current_level, current_score, res[0]))
+    else:
+        cur.execute("INSERT INTO user_score (user_id, level, score) VALUES (%s, %s, %s)", (player_id, current_level, current_score))
+    conn.commit()
+
+def game_loop():
+    global current_level, game_speed
+    player_x, player_y = WIDTH // 2, HEIGHT // 2
+    velocity_x, velocity_y = 0, 0
+    snake_body = []
+    snake_length = 1
+    food = [random.randrange(0, WIDTH, snake_block), random.randrange(0, HEIGHT, snake_block)]
+    current_score = 0
+    paused = False
+    running = True
+
+    while running:
+        while paused:
+            win.fill((0, 0, 0))
+            message("Paused. Press C to continue or Q to quit.", (255, 255, 255))
+            pygame.display.update()
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_c:
+                        paused = False
+                    elif event.key == pygame.K_q:
+                        save_score(player_id, current_level, current_score)
+                        pygame.quit()
+                        sys.exit()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                save_score(player_id, current_level, current_score)
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_LEFT:
+                    velocity_x, velocity_y = -snake_block, 0
+                elif event.key == pygame.K_RIGHT:
+                    velocity_x, velocity_y = snake_block, 0
+                elif event.key == pygame.K_UP:
+                    velocity_x, velocity_y = 0, -snake_block
+                elif event.key == pygame.K_DOWN:
+                    velocity_x, velocity_y = 0, snake_block
+                elif event.key == pygame.K_p:
+                    paused = True
+                    save_score(player_id, current_level, current_score)
+                    print("Game paused and score saved.")
+
+        player_x += velocity_x
+        player_y += velocity_y
+
+        if player_x < 0 or player_x >= WIDTH or player_y < 0 or player_y >= HEIGHT:
+            running = False
+
+        win.fill((0, 0, 0))
+        pygame.draw.rect(win, (255, 0, 0), (*food, snake_block, snake_block))
+
+        snake_body.append([player_x, player_y])
+        if len(snake_body) > snake_length:
+            del snake_body[0]
+
+        for block in snake_body[:-1]:
+            if block == [player_x, player_y]:
+                running = False
+
+        draw_snake(snake_body)
+        pygame.display.update()
+
+        if player_x == food[0] and player_y == food[1]:
+            food = [random.randrange(0, WIDTH, snake_block), random.randrange(0, HEIGHT, snake_block)]
+            snake_length += 1
+            current_score += 10
+
+            old_level = current_level
+            current_level = 1 + current_score // 50
+            if current_level != old_level:
+                print(f"Level up! New level: {current_level}")
+                game_speed = 10 + current_level * 5
+
+        clock.tick(game_speed)
+
+    save_score(player_id, current_level, current_score)
+    pygame.quit()
+    sys.exit()
+
+game_loop()
